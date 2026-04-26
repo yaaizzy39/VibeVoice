@@ -9,5 +9,9 @@ if not exist ".venv-vibevoice-asr\Scripts\python.exe" (
   exit /b 1
 )
 
+set "HF_HOME=%CD%\.hf-cache"
+set "HF_HUB_CACHE=%HF_HOME%\hub"
+set "HF_XET_CACHE=%HF_HOME%\xet"
+
 ".venv-vibevoice-asr\Scripts\python.exe" "local_asr\transcribe_ui.py"
 if errorlevel 1 pause

@@ -163,10 +163,11 @@ class TranscribeUi:
 
     def _run_worker(self) -> None:
         try:
+            cache_dir = configure_hf_cache()
+
             import torch
             from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
 
-            cache_dir = configure_hf_cache()
             model_id = self.model_var.get().strip() or DEFAULT_MODEL_ID
             output_dir = Path(self.output_dir_var.get().strip() or "transcripts")
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -236,6 +237,11 @@ class TranscribeUi:
         except Exception as exc:
             self.log("エラーが発生しました。")
             self.log(str(exc))
+            if "1455" in str(exc) or "ページング ファイル" in str(exc):
+                self.log("")
+                self.log("対処: Windows の仮想メモリ/ページングファイルを増やしてください。")
+                self.log("目安: 32768 MB 以上、余裕を見るなら 65536 MB。")
+                self.log("設定後は Windows を再起動してから、もう一度実行してください。")
             self.log(traceback.format_exc())
             self.root.after(0, lambda: messagebox.showerror("エラー", str(exc)))
         finally:
