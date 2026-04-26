@@ -97,6 +97,8 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv-vibevoice-asr/
+.hf-cache/
 env/
 venv/
 ENV/
@@ -171,6 +173,7 @@ tags
 # our proj
 /output/
 /outputs/
+/transcripts/
 /checkpoint/
 /checkpoints/
 exp
