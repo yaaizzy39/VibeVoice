@@ -26,6 +26,8 @@ def configure_hf_cache() -> Path:
     os.environ.setdefault("HF_HOME", str(cache_dir))
     os.environ.setdefault("HF_HUB_CACHE", str(cache_dir / "hub"))
     os.environ.setdefault("HF_XET_CACHE", str(cache_dir / "xet"))
+    # Allow non-contiguous CUDA allocations to avoid OOM on 6 GB GPUs
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     return cache_dir
 
 
@@ -238,6 +240,7 @@ def main() -> None:
     load_kwargs: dict[str, Any] = {
         "torch_dtype": dtype,
         "local_files_only": args.offline,
+        "low_cpu_mem_usage": True,
     }
     if device == "cuda":
         load_kwargs["device_map"] = "auto"

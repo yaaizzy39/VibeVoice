@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import os
 import queue
+import shutil
+import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 from tkinter import (
@@ -35,6 +39,53 @@ from transcribe_vibevoice_hf import (
 )
 
 
+def _open_log_file() -> "tuple[Path, object] | tuple[None, None]":
+    """Open a per-run log file so crashes leave a trace even if the terminal closes."""
+    repo_root = Path(__file__).resolve().parents[1]
+    log_dir = repo_root / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"ui-{time.strftime('%Y%m%d-%H%M%S')}.log"
+        handle = open(path, "w", encoding="utf-8", buffering=1)  # line buffered
+        return path, handle
+    except OSError:
+        return None, None
+
+
+def _system_info() -> list[str]:
+    """Return a list of human-readable system stats for diagnostics."""
+    lines: list[str] = []
+    lines.append(f"Python: {sys.version.split()[0]}")
+    lines.append(f"Executable: {sys.executable}")
+    try:
+        import platform
+
+        lines.append(f"Platform: {platform.platform()}")
+    except Exception:
+        pass
+    try:
+        import psutil  # type: ignore
+
+        vm = psutil.virtual_memory()
+        sm = psutil.swap_memory()
+        lines.append(
+            f"RAM: total={vm.total / 1e9:.1f}GB available={vm.available / 1e9:.1f}GB"
+        )
+        lines.append(f"Swap/Pagefile: total={sm.total / 1e9:.1f}GB free={sm.free / 1e9:.1f}GB")
+    except ImportError:
+        lines.append("psutil not installed (RAM/swap info unavailable)")
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        usage = shutil.disk_usage(repo_root)
+        lines.append(
+            f"Disk ({repo_root.drive or repo_root}): "
+            f"free={usage.free / 1e9:.1f}GB total={usage.total / 1e9:.1f}GB"
+        )
+    except OSError:
+        pass
+    return lines
+
+
 class TranscribeUi:
     def __init__(self, root: Tk) -> None:
         self.root = root
@@ -45,6 +96,7 @@ class TranscribeUi:
         self.audio_files: list[str] = []
         self.worker: threading.Thread | None = None
         self.log_queue: "queue.Queue[str]" = queue.Queue()
+        self.log_path, self.log_file = _open_log_file()
 
         self.model_var = StringVar(value=DEFAULT_MODEL_ID)
         self.output_dir_var = StringVar(value=str(Path("transcripts")))
@@ -136,6 +188,16 @@ class TranscribeUi:
 
     def log(self, message: str) -> None:
         self.log_queue.put(message)
+        if self.log_file is not None:
+            try:
+                self.log_file.write(message + "\n")
+                self.log_file.flush()
+                try:
+                    os.fsync(self.log_file.fileno())
+                except OSError:
+                    pass
+            except (OSError, ValueError):
+                pass
 
     def _poll_log_queue(self) -> None:
         while True:
@@ -165,8 +227,26 @@ class TranscribeUi:
         try:
             cache_dir = configure_hf_cache()
 
+            if self.log_path is not None:
+                self.log(f"Log file: {self.log_path}")
+            for line in _system_info():
+                self.log(line)
+
             import torch
             from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
+
+            self.log(f"PyTorch: {torch.__version__}")
+            if torch.cuda.is_available():
+                try:
+                    name = torch.cuda.get_device_name(0)
+                    free_b, total_b = torch.cuda.mem_get_info(0)
+                    self.log(
+                        f"CUDA GPU0: {name} VRAM total={total_b / 1e9:.2f}GB free={free_b / 1e9:.2f}GB"
+                    )
+                except Exception as info_exc:
+                    self.log(f"CUDA info unavailable: {info_exc}")
+            else:
+                self.log("CUDA: not available")
 
             model_id = self.model_var.get().strip() or DEFAULT_MODEL_ID
             output_dir = Path(self.output_dir_var.get().strip() or "transcripts")
@@ -187,11 +267,14 @@ class TranscribeUi:
             load_kwargs = {
                 "torch_dtype": dtype,
                 "local_files_only": offline,
+                "low_cpu_mem_usage": True,
             }
             if device == "cuda":
                 load_kwargs["device_map"] = "auto"
 
+            self.log("プロセッサを読み込み中...")
             processor = AutoProcessor.from_pretrained(model_id, local_files_only=offline)
+            self.log("プロセッサ読み込み完了。モデル本体を読み込み中...")
             model = VibeVoiceAsrForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
             if device == "cpu":
                 model = model.to("cpu")
