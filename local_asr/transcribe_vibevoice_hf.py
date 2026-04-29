@@ -12,6 +12,9 @@ import json
 import os
 import re
 import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,7 @@ DEFAULT_MODEL_ROOT = Path(os.environ.get("VIBEVOICE_MODEL_ROOT", r"D:\models\Vib
 DEFAULT_LOCAL_MODEL_DIR = Path(
     os.environ.get("VIBEVOICE_LOCAL_MODEL_DIR", r"D:\models\VibeVoice-ASR-HF")
 )
+ProgressCallback = Callable[[str], None]
 
 
 def configure_stdio() -> None:
@@ -47,6 +51,39 @@ def _safe_print(*values: object, file: Any | None = None) -> None:
             for value in values
         ]
         print(*safe_values, file=target)
+
+
+def _progress(progress: ProgressCallback | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
+    else:
+        _safe_print(message)
+
+
+def _run_with_heartbeat(
+    *,
+    label: str,
+    progress: ProgressCallback | None,
+    interval_seconds: int,
+    fn: Callable[[], Any],
+) -> Any:
+    if progress is None:
+        return fn()
+
+    start = time.monotonic()
+    done = threading.Event()
+
+    def heartbeat() -> None:
+        while not done.wait(interval_seconds):
+            elapsed = int(time.monotonic() - start)
+            progress(f"{label}... {elapsed}秒経過")
+
+    thread = threading.Thread(target=heartbeat, daemon=True)
+    thread.start()
+    try:
+        return fn()
+    finally:
+        done.set()
 
 
 def default_hf_cache_dir() -> Path:
@@ -186,24 +223,44 @@ def transcribe_one(
     dtype: Any,
     max_new_tokens: int,
     tokenizer_chunk_size: int | None,
+    progress: ProgressCallback | None = None,
+    heartbeat_interval_seconds: int = 30,
 ) -> dict[str, Any]:
     if not audio_path.exists():
         _fail(f"Audio file not found: {audio_path}")
 
     model_device = next(model.parameters()).device
-    _safe_print(f"Processing: {audio_path}")
+    try:
+        size_mb = audio_path.stat().st_size / (1024 * 1024)
+        _progress(progress, f"処理開始: {audio_path} ({size_mb:.1f} MB)")
+    except OSError:
+        _progress(progress, f"処理開始: {audio_path}")
 
-    inputs = processor.apply_transcription_request(
-        audio=str(audio_path),
-        prompt=prompt,
-    ).to(model_device, dtype)
+    _progress(progress, "音声を読み込み、モデル入力を作成しています...")
+    inputs = _run_with_heartbeat(
+        label="音声前処理中",
+        progress=progress,
+        interval_seconds=heartbeat_interval_seconds,
+        fn=lambda: processor.apply_transcription_request(
+            audio=str(audio_path),
+            prompt=prompt,
+        ).to(model_device, dtype),
+    )
+    _progress(progress, "音声前処理が完了しました。")
 
     generate_kwargs: dict[str, Any] = {"max_new_tokens": max_new_tokens}
     if tokenizer_chunk_size:
         generate_kwargs["tokenizer_chunk_size"] = tokenizer_chunk_size
 
+    _progress(progress, f"文字起こし生成を開始します。max_new_tokens={max_new_tokens}")
     with torch.no_grad():
-        output_ids = model.generate(**inputs, **generate_kwargs)
+        output_ids = _run_with_heartbeat(
+            label="文字起こし生成中",
+            progress=progress,
+            interval_seconds=heartbeat_interval_seconds,
+            fn=lambda: model.generate(**inputs, **generate_kwargs),
+        )
+    _progress(progress, "文字起こし生成が完了しました。結果をデコードしています...")
 
     generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
 
@@ -216,6 +273,7 @@ def transcribe_one(
         parsed = _decode(processor, generated_ids, return_format="parsed")
     except Exception:
         parsed = None
+    _progress(progress, "デコードが完了しました。")
 
     return {
         "audio": str(audio_path),

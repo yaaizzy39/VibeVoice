@@ -282,8 +282,10 @@ class TranscribeUi:
             model.eval()
             self.log("モデル読み込み完了。")
 
-            for audio in self.audio_files:
+            total_files = len(self.audio_files)
+            for index, audio in enumerate(self.audio_files, start=1):
                 audio_path = Path(audio)
+                self.log(f"[{index}/{total_files}] ファイル処理を開始します: {audio_path}")
                 result = transcribe_one(
                     processor=processor,
                     model=model,
@@ -293,7 +295,9 @@ class TranscribeUi:
                     dtype=dtype,
                     max_new_tokens=32768,
                     tokenizer_chunk_size=None,
+                    progress=self.log,
                 )
+                self.log(f"[{index}/{total_files}] 推論が完了しました。ファイルを書き出しています...")
 
                 base = output_dir / _safe_stem(audio_path)
                 txt_path = base.with_suffix(".txt")
