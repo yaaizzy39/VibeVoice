@@ -8,9 +8,16 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $VenvFullPath = Join-Path $RepoRoot $VenvPath
+$TempDir = Join-Path $RepoRoot ".tmp"
+New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+$env:TEMP = $TempDir
+$env:TMP = $TempDir
+$env:PIP_CACHE_DIR = Join-Path $RepoRoot ".pip-cache"
 
 function Find-Python {
     $candidates = @(
+        @{ Exe = "py"; Args = @("-3.13") },
+        @{ Exe = "py"; Args = @("-3.12") },
         @{ Exe = "py"; Args = @("-3.11") },
         @{ Exe = "py"; Args = @("-3.10") },
         @{ Exe = "python"; Args = @() }
@@ -50,6 +57,15 @@ if (-not (Test-Path -LiteralPath $VenvFullPath)) {
 $script:VenvPython = Join-Path $VenvFullPath "Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $script:VenvPython)) {
     throw "Virtual environment Python was not found: $script:VenvPython"
+}
+
+& $script:VenvPython -m pip --version | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Virtual environment is missing pip. Recreating it with local temp storage..."
+    & $python.Exe @($python.Args) -m venv --clear $VenvFullPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to recreate virtual environment."
+    }
 }
 
 Invoke-Pip @("install", "--upgrade", "pip", "setuptools", "wheel")

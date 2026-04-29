@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string[]]$Audio,
 
-    [string]$Model = "microsoft/VibeVoice-ASR-HF",
+    [string]$Model = "D:\models\VibeVoice-ASR-HF",
     [string]$OutputDir = "transcripts",
     [ValidateSet("auto", "cuda", "cpu")]
     [string]$Device = "auto",
@@ -26,6 +26,8 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 }
 
 $runner = Join-Path $RepoRoot "local_asr\transcribe_vibevoice_hf.py"
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUNBUFFERED = "1"
 $argsList = @(
     $runner
 ) + $Audio + @(

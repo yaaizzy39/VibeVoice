@@ -31,6 +31,7 @@ from tkinter import (
 from transcribe_vibevoice_hf import (
     DEFAULT_MODEL_ID,
     configure_hf_cache,
+    default_model_for_ui,
     _safe_stem,
     _segments_to_srt,
     _select_device,
@@ -98,7 +99,7 @@ class TranscribeUi:
         self.log_queue: "queue.Queue[str]" = queue.Queue()
         self.log_path, self.log_file = _open_log_file()
 
-        self.model_var = StringVar(value=DEFAULT_MODEL_ID)
+        self.model_var = StringVar(value=default_model_for_ui())
         self.output_dir_var = StringVar(value=str(Path("transcripts")))
         self.device_var = StringVar(value="auto")
         self.dtype_var = StringVar(value="auto")
@@ -248,7 +249,7 @@ class TranscribeUi:
             else:
                 self.log("CUDA: not available")
 
-            model_id = self.model_var.get().strip() or DEFAULT_MODEL_ID
+            model_id = self.model_var.get().strip() or default_model_for_ui()
             output_dir = Path(self.output_dir_var.get().strip() or "transcripts")
             output_dir.mkdir(parents=True, exist_ok=True)
             prompt = self.prompt_var.get().strip() or None

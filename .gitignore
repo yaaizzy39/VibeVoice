@@ -50,6 +50,8 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+.tmp/
+.pip-cache/
 nosetests.xml
 coverage.xml
 *.cover
@@ -174,6 +176,7 @@ tags
 /output/
 /outputs/
 /transcripts/
+/transcripts-test/
 /checkpoint/
 /checkpoints/
 exp

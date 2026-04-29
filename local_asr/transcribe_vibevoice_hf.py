@@ -17,12 +17,52 @@ from typing import Any
 
 
 DEFAULT_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
+DEFAULT_MODEL_ROOT = Path(os.environ.get("VIBEVOICE_MODEL_ROOT", r"D:\models\VibeVoice"))
+DEFAULT_LOCAL_MODEL_DIR = Path(
+    os.environ.get("VIBEVOICE_LOCAL_MODEL_DIR", r"D:\models\VibeVoice-ASR-HF")
+)
+
+
+def configure_stdio() -> None:
+    """Avoid cp932 logging crashes on Windows paths with unusual Unicode."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (OSError, ValueError):
+            pass
+
+
+def _safe_print(*values: object, file: Any | None = None) -> None:
+    target = file or sys.stdout
+    try:
+        print(*values, file=target)
+    except UnicodeEncodeError:
+        safe_values = [
+            str(value).encode(target.encoding or "utf-8", errors="backslashreplace").decode(
+                target.encoding or "utf-8", errors="replace"
+            )
+            for value in values
+        ]
+        print(*safe_values, file=target)
+
+
+def default_hf_cache_dir() -> Path:
+    return DEFAULT_MODEL_ROOT / "hf-cache"
+
+
+def default_model_for_ui() -> str:
+    if DEFAULT_LOCAL_MODEL_DIR.exists():
+        return str(DEFAULT_LOCAL_MODEL_DIR)
+    return DEFAULT_MODEL_ID
 
 
 def configure_hf_cache() -> Path:
-    """Use a repo-local Hugging Face cache unless the user already set one."""
-    repo_root = Path(__file__).resolve().parents[1]
-    cache_dir = repo_root / ".hf-cache"
+    """Use a D-drive Hugging Face cache unless the user already set one."""
+    configure_stdio()
+    cache_dir = Path(os.environ.get("HF_HOME", default_hf_cache_dir()))
     os.environ.setdefault("HF_HOME", str(cache_dir))
     os.environ.setdefault("HF_HUB_CACHE", str(cache_dir / "hub"))
     os.environ.setdefault("HF_XET_CACHE", str(cache_dir / "xet"))
@@ -32,7 +72,7 @@ def configure_hf_cache() -> Path:
 
 
 def _fail(message: str) -> None:
-    print(f"ERROR: {message}", file=sys.stderr)
+    _safe_print(f"ERROR: {message}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -151,7 +191,7 @@ def transcribe_one(
         _fail(f"Audio file not found: {audio_path}")
 
     model_device = next(model.parameters()).device
-    print(f"Processing: {audio_path}")
+    _safe_print(f"Processing: {audio_path}")
 
     inputs = processor.apply_transcription_request(
         audio=str(audio_path),
@@ -191,7 +231,7 @@ def main() -> None:
         description="Transcribe audio locally with microsoft/VibeVoice-ASR-HF."
     )
     parser.add_argument("audio", nargs="+", help="Audio/video file path(s) to transcribe.")
-    parser.add_argument("--model", default=DEFAULT_MODEL_ID, help="HF model ID or local model directory.")
+    parser.add_argument("--model", default=default_model_for_ui(), help="HF model ID or local model directory.")
     parser.add_argument("--output-dir", default="transcripts", help="Directory for .txt/.json outputs.")
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     parser.add_argument(
@@ -230,12 +270,12 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     prompt = _read_prompt(args)
 
-    print(f"Model: {args.model}")
-    print(f"Hugging Face cache: {cache_dir}")
-    print(f"Device: {device}")
-    print(f"Dtype: {str(dtype).replace('torch.', '')}")
+    _safe_print(f"Model: {args.model}")
+    _safe_print(f"Hugging Face cache: {cache_dir}")
+    _safe_print(f"Device: {device}")
+    _safe_print(f"Dtype: {str(dtype).replace('torch.', '')}")
     if args.offline:
-        print("Offline mode: enabled")
+        _safe_print("Offline mode: enabled")
 
     load_kwargs: dict[str, Any] = {
         "torch_dtype": dtype,
@@ -281,9 +321,9 @@ def main() -> None:
                 srt_path.write_text(srt_text, encoding="utf-8")
                 written.append(srt_path)
 
-    print("Written files:")
+    _safe_print("Written files:")
     for path in written:
-        print(f"  {path}")
+        _safe_print(f"  {path}")
 
 
 if __name__ == "__main__":

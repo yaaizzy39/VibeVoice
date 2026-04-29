@@ -9,10 +9,11 @@ if not exist ".venv-vibevoice-asr\Scripts\python.exe" (
   exit /b 1
 )
 
-set "HF_HOME=%CD%\.hf-cache"
-set "HF_HUB_CACHE=%HF_HOME%\hub"
-set "HF_XET_CACHE=%HF_HOME%\xet"
+if not defined HF_HOME set "HF_HOME=D:\models\VibeVoice\hf-cache"
+if not defined HF_HUB_CACHE set "HF_HUB_CACHE=%HF_HOME%\hub"
+if not defined HF_XET_CACHE set "HF_XET_CACHE=%HF_HOME%\xet"
 set "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+set "PYTHONIOENCODING=utf-8"
 set "PYTHONUNBUFFERED=1"
 
 if not exist "logs" mkdir "logs"

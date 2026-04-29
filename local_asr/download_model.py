@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from transcribe_vibevoice_hf import configure_hf_cache
+from transcribe_vibevoice_hf import DEFAULT_LOCAL_MODEL_DIR, _safe_print, configure_hf_cache
 
 DEFAULT_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 
@@ -16,8 +16,8 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL_ID, help="HF model ID to download.")
     parser.add_argument(
         "--local-dir",
-        default=None,
-        help="Optional directory to store a full copy. If omitted, Hugging Face cache is used.",
+        default=str(DEFAULT_LOCAL_MODEL_DIR),
+        help="Directory to store a full model copy.",
     )
     args = parser.parse_args()
 
@@ -31,8 +31,8 @@ def main() -> None:
         kwargs["local_dir"] = str(local_dir)
 
     path = snapshot_download(args.model, **kwargs)
-    print(path)
-    print(f"Hugging Face cache: {cache_dir}")
+    _safe_print(path)
+    _safe_print(f"Hugging Face cache: {cache_dir}")
 
 
 if __name__ == "__main__":
